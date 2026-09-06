@@ -1,17 +1,5 @@
-const fs = require('fs');
-const path = require('path');
-
 const BRAND_NAME = 'Aarambh Athletics Hub';
 const BRAND_TAGLINE = 'Train • Compete • Achieve';
-const LOGO_PATH = path.resolve(__dirname, '../../../frontend/src/assets/logo.png');
-
-let logoDataUri = '';
-try {
-    const logoBuffer = fs.readFileSync(LOGO_PATH);
-    logoDataUri = `data:image/png;base64,${logoBuffer.toString('base64')}`;
-} catch (error) {
-    console.warn('Aarambh logo not found at frontend/src/assets/logo.png; continuing without embedded logo.');
-}
 
 const getEmailTemplate = (title, content) => `
 <!DOCTYPE html>
@@ -28,7 +16,7 @@ const getEmailTemplate = (title, content) => `
 
                         <tr>
                             <td align="center" style="background:#0f172a;color:white;padding:25px 25px 18px;">
-                                ${logoDataUri ? `<img src="${logoDataUri}" alt="${BRAND_NAME}" width="120" height="120" style="display:block;border-radius:50%;margin:0 auto 12px;background:#fff;padding:8px;" />` : '<div style="font-size:28px;font-weight:700;letter-spacing:1px;margin-bottom:8px;">Aarambh</div>'}
+                                <div style="font-size:28px;font-weight:700;letter-spacing:1px;margin-bottom:8px;">Aarambh</div>
                                 <div style="font-size:28px;font-weight:700;letter-spacing:1px;">${BRAND_NAME}</div>
                                 <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#dbeafe;margin-top:8px;">${BRAND_TAGLINE}</div>
                             </td>

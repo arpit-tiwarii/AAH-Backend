@@ -1,5 +1,6 @@
 const cron = require('node-cron')
-const { emailQueue } = require('../queues/email.queue');
+const { sendPaymentReminderEmail } = require('../utils/email.service');
+const { logger } = require('../utils/logger');
 const { findPendingPayments } = require('../repositories/Fee.repository');
 
 
@@ -13,29 +14,25 @@ const paymentReminderJob = () => {
                     const email = payment?.user?.email;
                     if (!email) continue;
 
-                    await emailQueue.add(
-                        'payment-reminder-email',
-                        {
+                    try {
+                        await sendPaymentReminderEmail({
                             email,
                             name: payment?.user?.name,
                             amount: payment?.amount,
                             duedate: payment?.month && payment?.year
                                 ? `${payment.month} ${payment.year}`
                                 : 'at your earliest convenience',
-                        },
-                        {
-                            attempts: 3,
-                            backoff: {
-                                type: 'exponential',
-                                delay: 2000
-                            },
-                            removeOnComplete: true
-                        }
-                    )
+                        });
+                    } catch (emailError) {
+                        logger.error(
+                            { err: emailError?.message, recipient: email, emailType: 'payment-reminder' },
+                            'Payment reminder email failed'
+                        );
+                    }
                 }
             }
         } catch (err) {
-            console.error('Payment reminder job failed', err?.message)
+            logger.error({ err: err?.message }, 'Payment reminder job failed')
         }
     }, {
         timezone: 'Asia/Kolkata',

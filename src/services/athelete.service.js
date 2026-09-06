@@ -9,7 +9,7 @@ const { InternalServerError } = require('../Error/InternalServerError');
 const { ValidationError } = require('../Error/ValidationError');
 const { Authentication } = require('../Error/AuthenticationError');
 const { ALLOWED_SPORTS, ATHLETE_STATUS } = require('../utils/constants');
-const { emailQueue } = require('../queues/email.queue');
+const { sendApprovalConfirmedEmail, sendApprovalRejectedEmail } = require('../utils/email.service');
 const { logger } = require('../utils/logger');
 
 
@@ -106,25 +106,25 @@ const updateAthleteStatusService = async (id, { status, reason }) => {
 
         const updatedAthlete = await updateUserById(id, { status });
 
-        // Notify the athlete of the decision. Enqueued best-effort: a mail
-        // backlog must never fail an admin's approve/reject action.
+        // Notify the athlete best-effort: an SMTP outage must never fail an
+        // admin's approve/reject action.
         try {
             if (status === ATHLETE_STATUS.APPROVED) {
-                await emailQueue.add('approval-confirm-email', {
+                await sendApprovalConfirmedEmail({
                     email: athlete.email,
                     name: athlete.name,
                     role,
                 });
             } else if (status === ATHLETE_STATUS.REJECTED) {
-                await emailQueue.add('approval-reject-email', {
+                await sendApprovalRejectedEmail({
                     email: athlete.email,
                     name: athlete.name,
                     role,
                     reason: reason || 'Your submitted documentation could not be verified.',
                 });
             }
-        } catch (queueErr) {
-            logger.error({ err: queueErr?.message, athleteId: id, status }, 'Failed to enqueue approval email');
+        } catch (emailError) {
+            logger.error({ err: emailError?.message, athleteId: id, status }, 'Failed to send approval email');
         }
 
         return {

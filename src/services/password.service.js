@@ -9,7 +9,7 @@ const {
     incrementOtpAttempts,
 } = require('../repositories/Otp.repository');
 const { generateOTP, MAX_OTP_ATTEMPTS } = require('./otp.service');
-const { emailQueue } = require('../queues/email.queue');
+const { sendPasswordResetOtpEmail, sendPasswordChangedEmail } = require('../utils/email.service');
 const { OTP_PURPOSE } = require('../utils/constants');
 const {
     validatePasswordStrength,
@@ -17,15 +17,6 @@ const {
     PASSWORD_POLICY_MESSAGE,
 } = require('../utils/password.util');
 const { logger } = require('../utils/logger');
-
-const EMAIL_JOB_OPTIONS = {
-    attempts: 3,
-    backoff: {
-        type: 'exponential',
-        delay: 2000,
-    },
-    removeOnComplete: true,
-};
 
 // Returned whether or not the address is registered. Any observable difference
 // here — a different message, status code or error — turns this endpoint into
@@ -73,15 +64,7 @@ const requestPasswordResetService = async ({ email }) => {
         }
 
         // The code travels by email only — it is never part of the response.
-        await emailQueue.add(
-            'password-reset-otp-email',
-            {
-                email: user.email,
-                name: user.name,
-                otp,
-            },
-            EMAIL_JOB_OPTIONS
-        );
+        await sendPasswordResetOtpEmail({ email: user.email, name: user.name, otp });
 
         return { message: GENERIC_REQUEST_MESSAGE };
     } catch (error) {
@@ -155,18 +138,11 @@ const resetPasswordService = async ({ email, otp, password }) => {
         // Best effort: the reset has already succeeded, so a Redis or SMTP
         // outage must not surface to the user as a failed reset.
         try {
-            await emailQueue.add(
-                'password-changed-email',
-                {
-                    email: user.email,
-                    name: user.name,
-                },
-                EMAIL_JOB_OPTIONS
-            );
-        } catch (queueError) {
+            await sendPasswordChangedEmail({ email: user.email, name: user.name });
+        } catch (emailError) {
             logger.error(
-                { err: queueError?.message, userId: user.id },
-                'Password reset succeeded but the confirmation email could not be queued'
+                { err: emailError?.message, userId: user.id, emailType: 'password-changed' },
+                'Password reset succeeded but the confirmation email could not be sent'
             );
         }
 

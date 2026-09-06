@@ -1,11 +1,9 @@
 const pino = require('pino');
 const { config } = require('../env');
 
-// Structured JSON logger. Replaces scattered console.* calls so logs are
-// parseable, levelled, and safe (secrets/PII are redacted). In development the
-// default pino output is still readable; pipe through `pino-pretty` locally if
-// you want colours (`node src/app.js | npx pino-pretty`).
-const logger = pino({
+// Structured JSON is retained in production for Render and log aggregation.
+// Development uses pino-pretty so local logs are readable without a pipeline.
+const loggerOptions = {
   level: process.env.LOG_LEVEL || (config.isProduction ? 'info' : 'debug'),
   base: { service: 'aarambh-athletics-hub-api' },
   redact: {
@@ -23,6 +21,21 @@ const logger = pino({
     ],
     remove: true,
   },
-});
+};
+
+if (!config.isProduction) {
+  loggerOptions.transport = {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+      translateTime: 'SYS:standard',
+      ignore: 'pid,hostname,service',
+      singleLine: true,
+      hideObject: true,
+    },
+  };
+}
+
+const logger = pino(loggerOptions);
 
 module.exports = { logger };
