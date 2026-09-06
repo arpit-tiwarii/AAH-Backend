@@ -10,11 +10,11 @@ const { logger } = require('../utils/logger');
 // never connected to a remote Redis in production. Passing the URL positionally
 // (or an options object) is the supported form.
 //
-// A new client is returned per call on purpose: BullMQ requires a dedicated
-// blocking connection for each Queue and Worker, and the rate limiter needs its own.
+// A new client is returned per call so independent Redis consumers can manage
+// their own connection lifecycle. The API currently uses Redis for rate limiting.
 const createRedisConnection = (overrides = {}) => {
   const options = {
-    maxRetriesPerRequest: null, // required by BullMQ; harmless for other consumers
+    maxRetriesPerRequest: null,
     enableReadyCheck: true,
     ...overrides,
   };

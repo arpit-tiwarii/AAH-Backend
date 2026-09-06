@@ -4,7 +4,7 @@ const { ValidationError } = require('../Error/ValidationError');
 const { AppError } = require('../Error/AppError');
 const { findActiveOtpByUser, createOtpRepository, incrementOtpAttempts } = require('../repositories/Otp.repository');
 const { findUserById, updateUserById } = require('../repositories/User.repository');
-const { emailQueue } = require('../queues/email.queue');
+const { sendOtpEmail } = require('../utils/email.service');
 const { OTP_PURPOSE } = require('../utils/constants');
 
 // Maximum wrong guesses allowed against a single active OTP before it is
@@ -17,7 +17,7 @@ function generateOTP() {
         .padStart(6, '0');
 }
 
-const sendOtp = async ({ uid, otp, email, name, session }) => {
+const sendOtp = async ({ uid, otp, email, name, session, sendEmail = true }) => {
     if (!otp || !uid || !email || !name) {
         throw new AppError('OTP could not be generated', 503);
     }
@@ -32,30 +32,27 @@ const sendOtp = async ({ uid, otp, email, name, session }) => {
         throw new DatabaseError('OTP was not created in database');
     }
 
-    await emailQueue.add(
-        'otp-email',
-        {
-            email,
-            name,
-            otp,
-        },
-        {
-            attempts: 3,
-            backoff: {
-                type: 'exponential',
-                delay: 2000,
-            },
-            removeOnComplete: true,
-        }
-    );
+    if (sendEmail) {
+        await sendOtpEmail({ email, name, otp });
+    }
 
     return otpResult;
 };
 
-const createOtpService = async ({ userId, email, name, session }) => {
+const createOtpService = async ({ userId, email, name, session, sendEmail = true }) => {
     const newOtp = generateOTP();
-    const responseOtp = await sendOtp({ uid: userId, otp: newOtp, email, name, session });
-    return { uid: responseOtp.UId };
+    const responseOtp = await sendOtp({
+        userId,
+        otp: newOtp,
+        email,
+        name,
+        session,
+        sendEmail,
+    });
+    return {
+        uid: responseOtp.UId,
+        ...(sendEmail ? {} : { otp: newOtp }),
+    };
 };
 
 // Public resend endpoint: the caller only supplies a user id. Recipient

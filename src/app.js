@@ -7,6 +7,7 @@ const pinoHttp = require('pino-http');
 
 const { config } = require('./env');
 const { logger } = require('./utils/logger');
+const { verifyEmailConnection } = require('./utils/email.service');
 const { attachRateLimitKey, rateLimiterClient, defaultLimiter } = require('./utils/rateLimit');
 const { connectDB, mongoose } = require('./config/db');
 const { verifyCloudinaryConnection } = require('./config/cloudinary');
@@ -65,6 +66,18 @@ app.use(attachRateLimitKey);
 app.use(pinoHttp({
   logger,
   autoLogging: { ignore: (req) => req.url === '/health' },
+  customSuccessMessage: (req, res, responseTime) => (
+    `${req.method} ${req.originalUrl} ${res.statusCode} - ${responseTime}ms`
+  ),
+  customErrorMessage: (req, res, error) => (
+    `${req.method} ${req.originalUrl} ${res.statusCode} - ${error?.message || 'request failed'}`
+  ),
+  customProps: (req, res) => ({
+    requestId: req.id,
+    method: req.method,
+    url: req.originalUrl,
+    statusCode: res.statusCode,
+  }),
 }));
 
 app.use(express.json({ limit: '1mb' }));
@@ -94,20 +107,9 @@ app.use(errorHandler);
 
 // --- Non-fatal readiness checks -------------------------------------------------
 // These verify external dependencies at boot but must NOT prevent the server from
-// starting: email is queued and retried, Cloudinary is only needed for uploads,
+// starting: email is sent directly, Cloudinary is only needed for uploads,
 // and Redis reconnects on its own. A transient blip in any of them should degrade
 // a feature, not take the whole API offline. MongoDB is the exception (below).
-
-const verifyEmailConnection = () => new Promise((resolve, reject) => {
-  const nodemailer = require('nodemailer');
-  const transporter = nodemailer.createTransport({
-    host: config.email.host,
-    port: config.email.port,
-    secure: config.email.port === 465,
-    auth: { user: config.email.user, pass: config.email.pass },
-  });
-  transporter.verify((error) => (error ? reject(error) : resolve(true)));
-});
 
 const verifyRedisConnection = () => new Promise((resolve, reject) => {
   const net = require('net');

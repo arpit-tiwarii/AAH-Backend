@@ -7,7 +7,8 @@ const { findUserByEmail, createUser } = require('../repositories/User.repository
 const { ALLOWED_SPORTS } = require('../utils/constants');
 const { validatePasswordStrength, PASSWORD_POLICY_MESSAGE } = require('../utils/password.util');
 const { createOtpService } = require('./otp.service.js');
-const { emailQueue } = require('../queues/email.queue');
+const { sendOtpEmail, sendWelcomeEmail } = require('../utils/email.service');
+const { logger } = require('../utils/logger');
 const { mongoose } = require('../config/db.js');
 const { isReplicaSetReady } = require('../models/model.utils');
 
@@ -45,7 +46,6 @@ async function registerUser({ name, email, password, age, sports, contact, schoo
         );
 
         let user;
-        let otpResult;
 
         if (await isReplicaSetReady()) {
             const session = await mongoose.startSession();
@@ -68,12 +68,6 @@ async function registerUser({ name, email, password, age, sports, contact, schoo
                         throw new DatabaseError('user not created.');
                     }
 
-                    otpResult = await createOtpService({
-                        userId: user.id,
-                        email: user.email,
-                        name: user.name,
-                        session,
-                    });
                 });
             } finally {
                 await session.endSession();
@@ -96,28 +90,29 @@ async function registerUser({ name, email, password, age, sports, contact, schoo
                 throw new DatabaseError('user not created.');
             }
 
-            otpResult = await createOtpService({
-                userId: user.id,
-                email: user.email,
-                name: user.name,
-            });
         }
 
-        await emailQueue.add(
-            'welcome-email',
-            {
-                email: user.email,
-                name: user.name,
-            },
-            {
-                attempts: 3,
-                backoff: {
-                    type: 'exponential',
-                    delay: 2000,
-                },
-                removeOnComplete: true,
-            }
-        );
+        // SMTP must run after the user transaction commits. Persist the OTP
+        // first, then deliver both messages without blocking the API response.
+        const otpResult = await createOtpService({
+            userId: user.id,
+            email: user.email,
+            name: user.name,
+            sendEmail: false,
+        });
+
+        setImmediate(() => {
+            sendOtpEmail({ email: user.email, name: user.name, otp: otpResult.otp })
+                .catch((emailError) => logger.error(
+                    { err: emailError?.message, userId: user.id, emailType: 'otp-verification' },
+                    'Registration succeeded but the OTP email could not be sent'
+                ));
+            sendWelcomeEmail({ email: user.email, name: user.name })
+                .catch((emailError) => logger.error(
+                    { err: emailError?.message, userId: user.id, emailType: 'welcome' },
+                    'Registration succeeded but the welcome email could not be sent'
+                ));
+        });
 
         return {
             id: user.id,
